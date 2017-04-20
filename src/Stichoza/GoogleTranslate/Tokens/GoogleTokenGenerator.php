@@ -11,6 +11,13 @@ namespace Stichoza\GoogleTranslate\Tokens;
 class GoogleTokenGenerator implements TokenProviderInterface
 {
     /**
+     * UTF-16 Code Units
+     *
+     * @var array
+     */
+    private $utf16CodeUnits = [];
+
+    /**
      * Generate and return a token.
      *
      * @param string $source Source language
@@ -21,6 +28,10 @@ class GoogleTokenGenerator implements TokenProviderInterface
      */
     public function generateToken($source, $target, $text)
     {
+        $escapedText = substr(json_encode($text), 1, -1);
+        preg_match_all("/\\\\u[0-9a-fA-F]{4}|./mi", $escapedText, $matches);
+        $this->utf16CodeUnits = $matches[0];
+
         return $this->TL($text);
     }
 
@@ -36,16 +47,16 @@ class GoogleTokenGenerator implements TokenProviderInterface
         $tkk = $this->TKK();
         $b = $tkk[0];
 
-        for ($d = [], $e = 0, $f = 0; $f < mb_strlen($a, 'UTF-8'); $f++) {
-            $g = $this->charCodeAt($a, $f);
+        for ($d = [], $e = 0, $f = 0; $f < count($this->utf16CodeUnits); $f++) {
+            $g = $this->charCodeAtUTF16CodeUnit($f);
             if (128 > $g) {
                 $d[$e++] = $g;
             } else {
                 if (2048 > $g) {
                     $d[$e++] = $g >> 6 | 192;
                 } else {
-                    if (55296 == ($g & 64512) && $f + 1 < mb_strlen($a, 'UTF-8') && 56320 == ($this->charCodeAt($a, $f + 1) & 64512)) {
-                        $g = 65536 + (($g & 1023) << 10) + ($this->charCodeAt($a, ++$f) & 1023);
+                    if (55296 == ($g & 64512) && $f + 1 < count($this->utf16CodeUnits) && 56320 == ($this->charCodeAtUTF16CodeUnit($f + 1) & 64512)) {
+                        $g = 65536 + (($g & 1023) << 10) + ($this->charCodeAtUTF16CodeUnit(++$f) & 1023);
                         $d[$e++] = $g >> 18 | 240;
                         $d[$e++] = $g >> 12 & 63 | 128;
                     } else {
@@ -129,23 +140,23 @@ class GoogleTokenGenerator implements TokenProviderInterface
     }
 
     /**
-     * Get the Unicode of the character at the specified index in a string.
+     * Get the Unicode of the character at the specified index in the UTF-16 code unit array.
      *
      * @param string $str
      * @param int    $index
      *
      * @return null|number
      */
-    private function charCodeAt($str, $index)
+    private function charCodeAtUTF16CodeUnit($index)
     {
-        $char = mb_substr($str, $index, 1, 'UTF-8');
-        if (mb_check_encoding($char, 'UTF-8')) {
-            $ret = mb_convert_encoding($char, 'UTF-32BE', 'UTF-8');
-            $result = hexdec(bin2hex($ret));
-
-            return $result;
+        $unit = $this->utf16CodeUnits[$index];
+        
+        if(strlen($unit) > 1) {
+            $hex = substr($unit, 2);
+            return hexdec($hex);
         }
-
-        return;
+        else {
+            return ord($unit);
+        }
     }
 }
